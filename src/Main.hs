@@ -8,13 +8,10 @@ import           Development.Shake.FilePath
 
 import qualified Data.List                     as L
 
--- TODO: Re-organize so editable variables are all at the top, then main,
--- then build rules, then transformations on editable variables, then
--- utility functions.
 
+-- CONFIGURATION
 
 -- Accounts with Statements to make Journals for
-
 data ImportAccount
     = CapitalOneChecking
     | ETrade
@@ -25,31 +22,10 @@ importAccountFolder = \case
     CapitalOneChecking -> "capitalone/checking"
     ETrade             -> "etrade"
 
-importCsvFolders :: [FilePath]
-importCsvFolders = map (makeImportFolder "csv") [minBound .. maxBound]
-
-importJournalFolders :: [FilePath]
-importJournalFolders = map (makeImportFolder "journal") [minBound .. maxBound]
-
-makeImportFolder :: String -> ImportAccount -> FilePath
-makeImportFolder type_ account =
-    "//import" </> importAccountFolder account </> type_ </> ("*" <.> type_)
-
 importRules :: ImportAccount -> String
 importRules = \case
     CapitalOneChecking -> "checking.rules"
     ETrade             -> "etrade.rules"
-
-importJournalDependencies :: FilePath -> [String]
-importJournalDependencies journalFile = either (: []) (const []) $ foldM
-    (\_ account ->
-        if ("//" ++ importAccountFolder account ++ "//*.journal")
-                ?== journalFile
-            then Left $ importRules account
-            else Right ()
-    )
-    ()
-    [minBound .. maxBound]
 
 
 -- Opening / Closing Accounts
@@ -63,6 +39,7 @@ closingAccount = "Equity:Closing Balances"
 openCloseQuery :: String
 openCloseQuery = "^(Assets|Liabilities):.*$"
 
+
 -- Years to Track
 
 currentYear :: Year
@@ -71,56 +48,32 @@ currentYear = 2020
 firstYear :: Year
 firstYear = 2020
 
-newtype Year
-    = Year Int
-    deriving (Show, Read, Eq, Num, Enum, Bounded, Hashable)
-
-allYears :: [Year]
-allYears = [firstYear .. currentYear]
+yearJournal :: Year -> String
+yearJournal (Year year) = show year ++ ".journal"
 
 
 -- File Names
 
-data ExportType
-    = TransactionJournal
-    | IncomeExpensesReport
-    | BalanceSheetReport
-    | CashFlowReport
-    | AccountsReport
-    | ClosingJournal
-    | OpeningJournal
-    deriving (Show, Read, Eq, Bounded, Enum)
+reportsDirectory :: String
+reportsDirectory = "reports"
 
-yearJournal :: Year -> String
-yearJournal (Year year) = show year ++ ".journal"
+openingDirectory :: String
+openingDirectory = "opening"
 
-exportTypeFilenameSuffix :: ExportType -> FilePath
-exportTypeFilenameSuffix type_ =
-    let typeSuffix = case type_ of
-            TransactionJournal   -> "all.journal"
-            IncomeExpensesReport -> "income-expenses.txt"
-            BalanceSheetReport   -> "balance-sheet.txt"
-            CashFlowReport       -> "cash-flow.txt"
-            AccountsReport       -> "accounts.txt"
-            ClosingJournal       -> "closing.journal"
-            OpeningJournal       -> "opening.journal"
-    in  "-" ++ typeSuffix
+closingDirectory :: String
+closingDirectory = "closing"
 
-allExportFiles :: [FilePath]
-allExportFiles = concat
-    [ [ "reports" </> show year ++ exportTypeFilenameSuffix type_
-      | type_       <- [TransactionJournal .. AccountsReport]
-      , (Year year) <- allYears
-      ]
-    , [ "opening" </> show year ++ exportTypeFilenameSuffix OpeningJournal
-      | y@(Year year) <- allYears
-      , y /= firstYear
-      ]
-    , [ "closing" </> show year ++ exportTypeFilenameSuffix ClosingJournal
-      | y@(Year year) <- allYears
-      , y /= currentYear
-      ]
-    ]
+-- The year of the export will be prepended to these names.
+exportFilename :: ExportType -> String
+exportFilename = \case
+    TransactionJournal   -> "all.journal"
+    IncomeExpensesReport -> "income-expenses.txt"
+    BalanceSheetReport   -> "balance-sheet.txt"
+    CashFlowReport       -> "cash-flow.txt"
+    AccountsReport       -> "accounts.txt"
+    ClosingJournal       -> "closing.journal"
+    OpeningJournal       -> "opening.journal"
+
 
 
 -- RULES
@@ -153,6 +106,7 @@ exportAll = do
   where
     (*%>) :: ExportType -> (FilePath -> Action ()) -> Rules ()
     (*%>) type_ action_ = ("//*" ++ exportTypeFilenameSuffix type_) %> action_
+
 
 
 -- ACTIONS
@@ -234,6 +188,75 @@ csvToJournal outputFile = do
                            ("./csv2journal.sh" :: String)
                            [makeRelative sourceDirectory inputFile]
     writeFileChanged outputFile output
+
+
+
+-- CONFIGURATION TRANSFORMATION
+
+
+importCsvFolders :: [FilePath]
+importCsvFolders = map (makeImportFolder "csv") [minBound .. maxBound]
+
+importJournalFolders :: [FilePath]
+importJournalFolders = map (makeImportFolder "journal") [minBound .. maxBound]
+
+makeImportFolder :: String -> ImportAccount -> FilePath
+makeImportFolder type_ account =
+    "//import" </> importAccountFolder account </> type_ </> ("*" <.> type_)
+
+importJournalDependencies :: FilePath -> [String]
+importJournalDependencies journalFile = either (: []) (const []) $ foldM
+    (\_ account ->
+        if ("//" ++ importAccountFolder account ++ "//*.journal")
+                ?== journalFile
+            then Left $ importRules account
+            else Right ()
+    )
+    ()
+    [minBound .. maxBound]
+
+
+newtype Year
+    = Year Int
+    deriving (Show, Read, Eq, Num, Enum, Bounded, Hashable)
+
+allYears :: [Year]
+allYears = [firstYear .. currentYear]
+
+
+data ExportType
+    = TransactionJournal
+    | IncomeExpensesReport
+    | BalanceSheetReport
+    | CashFlowReport
+    | AccountsReport
+    | ClosingJournal
+    | OpeningJournal
+    deriving (Show, Read, Eq, Bounded, Enum)
+
+exportTypeFilenameSuffix :: ExportType -> FilePath
+exportTypeFilenameSuffix = ("-" ++) . exportFilename
+
+allExportFiles :: [FilePath]
+allExportFiles = concat
+    [ [ reportsDirectory </> show year ++ exportTypeFilenameSuffix type_
+      | type_       <- [TransactionJournal .. AccountsReport]
+      , (Year year) <- allYears
+      ]
+    , [ openingDirectory
+        </> show year
+        ++  exportTypeFilenameSuffix OpeningJournal
+      | y@(Year year) <- allYears
+      , y /= firstYear
+      ]
+    , [ closingDirectory
+        </> show year
+        ++  exportTypeFilenameSuffix ClosingJournal
+      | y@(Year year) <- allYears
+      , y /= currentYear
+      ]
+    ]
+
 
 
 -- UTILS

@@ -1,0 +1,27 @@
+name:                hledger-exporter
+version:             0.1.0.0
+#synopsis:
+#description:
+homepage:            https://github.com/prikhi/hledger-exporter#readme
+license:             BSD3
+author:              Pavan Rikhi
+maintainer:          pavan.rikhi@gmail.com
+copyright:           2020 Pavan Rikhi
+category:            Web
+extra-source-files:
+- README.md
+
+ghc-options:
+  - -Wall
+  - -threaded
+  - -with-rtsopts=-N
+
+dependencies:
+  - base >= 4.7 && < 5
+  - shake
+  - hashable
+
+executables:
+  hledger-exporter:
+    source-dirs:      src
+    main:             Main.hs
